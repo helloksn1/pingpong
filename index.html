@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>PP</title>
+        <script src="jquery.min.js"></script>
+        <style>
+            #full_container {
+                width: 1000px;
+                height: 600px;
+                border: 1px solid black;
+                position: fixed;
+                left: 50%;
+                top: 50%;
+                transform: translate(-50%, -50%);
+            }
+            #full_container * {
+                position: absolute;
+            }
+            #pad {
+                width: 500px;
+                height: 300px;
+                background-color: green;
+                left: 250px;
+                top: 150px;
+                border: 3px solid black;
+            }
+            #ball {
+                width: 10px;
+                height: 10px;
+                border-radius: 50%;
+                border: 1px solid black;
+                background-color: white;
+            }
+            .racket {
+                width: 30px;
+                height: 60px;
+                border: 1px solid black;
+                border-radius: 50%;
+            }
+            #lp div {
+                transform: skewX(-10deg);
+                left: 5px;
+                top: 50px;
+                width: 6px;
+                height: 30px;
+                border: 1px solid black;
+                background-color: white;
+            }
+            #rp div {
+                transform: skewX(-10deg);
+                left: 15px;
+                top: -20px;
+                width: 6px;
+                height: 30px;
+                border: 1px solid black;
+                background-color: white;
+            }
+            #lp {
+                background-color: red;
+            }
+            #rp {
+                background-color: blue;
+            }
+            .yellow-line {
+                border: 1px solid yellow;
+                left: 0px;
+                width: 1000px;
+                height: 0px;
+            }
+            #middle_line {
+                left: 498px;
+                top: 130px;
+                width: 3px;
+                height: 340px;
+                border: 2px solid black;
+            }
+            #left_mark {
+                font-size: 40px;
+                left: 20px;
+                top: -50px;
+            }
+            #right_mark {
+                font-size: 40px;
+                right: 20px;
+                top: -50px;
+            }
+        </style>
+    </head>
+    <body>
+        <div id="full_container">
+            <div id="pad"></div>
+            <div id="lp" class="racket"><div></div></div>
+            <div id="rp" class="racket"><div></div></div>
+            <div class="yellow-line" style="top: 50px;"></div>
+            <div class="yellow-line" style="top: 550px;"></div>
+            <div id="middle_line"></div>
+            <div id="left_mark">0</div>
+            <div id="right_mark">0</div>
+            <div id="ball"></div>
+        </div>
+        <script>
+            const LEFT = 'left', RIGHT = 'right';
+            let left, right, ball;
+            let left_mark = 0, right_mark = 0; // left, right得分
+            let crashed_handle = ''; // 哪个球拍打了求 LEFT or RIGHT
+
+            // 球拍初始化
+            // x, y: 位置
+            // x_speed, y_speed: x, y轴方向的速度
+            // handle: DOM对象
+            const initHandle = () => {
+                crashed_handle = '';
+                left = {
+                    x: 100,
+                    y: 300,
+                    x_speed: 0,
+                    y_speed: 0,
+                    handle: $("#lp")
+                };
+                right = {
+                    x: 900,
+                    y: 300,
+                    x_speed: 0,
+                    y_speed: 0,
+                    handle: $("#rp")
+                };
+            }
+
+            // 求的初始化 pos决定开始位置
+            // pos: LEFT 放在在左边
+            // pos: RIGHT 放在右边
+            const initBall = (pos) => {
+                ball = {
+                    x: pos == LEFT ? 200 : 800,
+                    y: 300,
+                    x_speed: 0,
+                    y_speed: 0,
+                    handle: $("#ball")
+                }
+            }
+            initHandle();
+            initBall(LEFT);
+            
+            const max_speed = 10;
+            const key_move_speed = 1.5;
+            const auto_move_speed = 0.5;
+            const handle_width = 10, handle_height = 60;
+            const ball_sz = 10;
+            const xspeed = 3, yspeed = 3;
+
+            // 设置球拍，球的DOM对象的位置
+            const moveHandle = () => {
+                left.handle.css("left", left.x - handle_width / 2 + "px");
+                left.handle.css("top", left.y - handle_height / 2 + "px");
+                right.handle.css("left", right.x - handle_width / 2 + "px");
+                right.handle.css("top", right.y - handle_height / 2 + "px");
+                ball.handle.css("left", ball.x - ball_sz / 2 + "px");
+                ball.handle.css("top", ball.y - ball_sz / 2 + "px");
+            };
+
+            // 移动速度有上限
+            const cutSpeed = (speed) => {
+                if (speed > max_speed) speed = max_speed;
+                if (speed < -max_speed) speed = -max_speed;
+                return speed;
+            }
+            // 减速
+            const downSpeed = (speed) => {
+                if (speed > 0) speed -= auto_move_speed;
+                else if (speed < 0) speed += auto_move_speed;
+                return speed;
+            }
+
+            // 球拍的y坐标必须在外框内, 左右球拍的y坐标范围一样
+            const inBoundY = (y) => {
+                if (y > 600 - handle_height / 2)
+                    y = 600 - handle_height / 2;
+                if (y < handle_height / 2)
+                    y = handle_height / 2;
+                return y;
+            }
+            // 球拍的x坐标必须在[stx, edx]
+            const inBound = (x, stx, edx) => {
+                if (x > edx - handle_width / 2)
+                    x = edx - handle_width / 2;
+                if (x < stx + handle_width / 2)
+                    x = stx + handle_width / 2;
+                return x;
+            }
+
+            const crashY = (y) => {
+                return y - handle_height / 2 <= ball.y && ball.y <= y + handle_height / 2;
+            };
+            const crashX = (x) => {
+                return Math.abs(x - ball.x) < 10;
+            }
+            // 球和球拍是否撞了
+            // itm是变量left或right
+            const crash = (itm) => {
+                return crashX(itm.x) && crashY(itm.y);
+            }
+
+            // 左边得分
+            const leftMarkAdd = () => {
+                left_mark++;
+                $("#left_mark").text(left_mark);
+            }
+            // 右边得分
+            const rightMarkAdd = () => {
+                right_mark++;
+                $("#right_mark").text(right_mark);
+            }
+
+            // 球是否撞墙了，撞了新游戏开始了
+            const ballOut = () => {
+                if (ball.x < 0) {
+                    initHandle();
+                    initBall(RIGHT);
+                    rightMarkAdd();
+                }
+                if (ball.x > 1000) {
+                    initHandle();
+                    initBall(LEFT);
+                    leftMarkAdd();
+
+                }
+                if (ball.y < 50 || ball.y > 550) {
+                    initHandle();
+                    if (crashed_handle == LEFT) {
+                        initBall(RIGHT);
+                        rightMarkAdd();
+                    }
+                    else {
+                        initBall(LEFT);
+                        leftMarkAdd();
+                    }
+                }
+            };
+
+            // 球撞到球拍了改变球的移动方向和速度
+            const crashBall = () => {
+                const downY = 5;
+                if (crashed_handle !== LEFT && crash(left)) {
+                    ball.x_speed = -ball.x_speed;
+                    ball.x_speed += left.x_speed;
+                    ball.y_speed += left.y_speed / downY;
+                    left.x_speed = 0;
+                    crashed_handle = LEFT;
+                }
+                if (crashed_handle !== RIGHT && crash(right)) {
+                    ball.x_speed = -ball.x_speed;
+                    ball.x_speed += right.x_speed;
+                    ball.y_speed += right.y_speed / downY;
+                    right.x_speed = 0;
+                    crashed_handle = RIGHT;
+                }
+            };
+
+            // 修改速度
+            // 比如按了A键，减左拍x方向速度
+            $(document).keydown(function(event) {
+                if (crashed_handle != LEFT) {
+                    if (event.keyCode == 65) { // A
+                        left.x_speed -= key_move_speed;
+                    }
+                    else if (event.keyCode == 83) { // S
+                        left.y_speed += key_move_speed;
+                    }
+                    else if (event.keyCode == 68) { // D
+                        left.x_speed += key_move_speed;
+                    }
+                    else if (event.keyCode == 87) { // W
+                        left.y_speed -= key_move_speed;
+                    }
+                }
+                if (crashed_handle != RIGHT) {
+                    if (event.keyCode == 37) { // left
+                        right.x_speed -= key_move_speed;
+                    }
+                    else if (event.keyCode == 40) { // down
+                        right.y_speed += key_move_speed;
+                    }
+                    else if (event.keyCode == 39) { // right
+                        right.x_speed += key_move_speed;
+                    }
+                    else if (event.keyCode == 38) { // up
+                        right.y_speed -= key_move_speed;
+                    }
+                }
+                left.x_speed = cutSpeed(left.x_speed);
+                left.y_speed = cutSpeed(left.y_speed);
+                right.x_speed = cutSpeed(right.x_speed);
+                right.y_speed = cutSpeed(right.y_speed);
+            })
+
+            setInterval(() => {
+                // 按个方向的速度更新坐标
+                left.x += left.x_speed;
+                left.y += left.y_speed;
+                right.x += right.x_speed;
+                right.y += right.y_speed;
+                ball.x += ball.x_speed;
+                ball.y += ball.y_speed;
+                // 不能越框
+                left.y = inBoundY(left.y);
+                right.y = inBoundY(right.y);
+                left.x = inBound(left.x, 0, 250);
+                right.x = inBound(right.x, 750,  1000);
+                // 按了方向键加速，不按了减速
+                left.x_speed = downSpeed(left.x_speed);
+                left.y_speed = downSpeed(left.y_speed);
+                right.x_speed = downSpeed(right.x_speed);
+                right.y_speed = downSpeed(right.y_speed);
+                crashBall();
+                moveHandle();
+                ballOut();
+            }, 100);
+        </script>
+    </body>
+</html>
